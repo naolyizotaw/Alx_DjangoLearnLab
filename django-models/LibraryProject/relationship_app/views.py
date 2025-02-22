@@ -132,3 +132,14 @@ def librarian_view(request):
 @user_passes_test(is_member)
 def member_view(request):
     return render(request, 'member_view.html')
+
+
+def is_librarian(user):
+    # Check if the user's role is 'Librarian'
+    return user.userprofile.role == 'Librarian'
+
+@login_required
+@user_passes_test(is_librarian)
+def librarian_view(request):
+    # Your view logic here, such as rendering a template
+    return render(request, 'librarian_view.html')
