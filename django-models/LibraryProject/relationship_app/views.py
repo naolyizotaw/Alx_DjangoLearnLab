@@ -1,111 +1,77 @@
+from django.db import models
+from django.contrib.auth.models import User
 
-from django.shortcuts import render, redirect, get_object_or_404
-from django.views.generic.detail import DetailView
-from relationship_app.models import Book
-from relationship_app.forms import BookForm
-from .models import Library, UserProfile
-from django.contrib.auth import login, logout, authenticate
-from django.contrib.auth.forms import UserCreationForm
-from django.contrib.auth.decorators import login_required, user_passes_test
-from django.contrib.auth.decorators import permission_required
+# Create your models here.
 
-def is_admin(user):
-    return user.profile.role == 'Admin'
+# Create your models here.
+class Author(models.Model):
+    name = models.CharField(max_length=50)
 
-def is_librarian(user):
-    return user.profile.role == 'Librarian'
+    def __str__(self):
+        return self.name
 
-def is_member(user):
-    return user.profile.role == 'Member'
+class Book(models.Model):
+    title = models.CharField(max_length=200)
+    author = models.ForeignKey(Author, on_delete=models.CASCADE, related_name='author')
+    
+    def __str__(self):
+        return f"{self.title} by {self.author}"  
 
-@user_passes_test(is_admin)
-def admin_view(request):
-    return render(request, 'relationship_app/admin_view.html')
+#Extending Book Model with Custom Permissions
+    class Meta(models.Model):
+        Permissions_Choices =(
+            ('can_add_book', 'can_add_book'),
+            ('can_change_book', 'can_change_book'),
+            ('can_delete_book', 'can_delete_book'),
 
-@user_passes_test(is_librarian)
-def librarian_view(request):
-    return render(request, 'relationship_app/librarian_view.html')
+        )
+    permissions = models.CharField(max_length=50,  choices='Permissions_Choices')
+    meta = models.TextField()
+    
+    def __str__(self):
+        return f'{self.user.username} - {self.permissions}'
 
-@user_passes_test(is_member)
-def member_view(request):
-    return render(request, 'relationship_app/member_view.html')
+class Library(models.Model):
+    name = models.CharField(max_length=200)
+    books = models.ManyToManyField(Book, related_name='libraries')
 
-def user_login(request):
-    if request.method == 'POST':
-        username = request.POST['username']
-        password = request.POST['password']
-        user = authenticate(request, username=username, password=password)
-        if user is not None:
-            login(request, user)
-            return redirect('home')  #Home page or dashboard
-        else:
-            return render(request, 'login.html', {'error': 'Invalid credentials'})
-    return render(request, 'login.html')
+    def __str__(self):
+        return self.name   
 
-def user_logout(request):
-    logout(request)
-    return render(request, 'logout.html')
+class Librarian(models.Model):
+    name = models.CharField(max_length=200)
+    library = models.OneToOneField(Library, on_delete=models.CASCADE, related_name='librarians')
 
-def register(request):
-    if request.method == 'POST':
-        form = UserCreationForm(request.POST)
-        if form.is_valid():
-            form.save()
-            username = form.cleaned_data.get('username')
-            password = form.cleaned_data.get('password1')
-            user = authenticate(username=username, password=password)
-            login(request, user)
-            return redirect('home')  # Redirect to a success page (home or dashboard)
-    else:
-        form = UserCreationForm()
-    return render(request, 'relationship_app/register.html', {'form': form})
+    def __str__(self):
+        return self.name
+    
+#Extending User Model with a UserProfile
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE)
+    
+    Role_Choices =(
+        ('Admin','Admin'),
+        ('Librarian', 'Librarian'),
+        ('Member', 'Member'),
+    
+    )
 
-def list_books(request):
-    books = Book.objects.all()  # Fetch all books from the database
-    return render(request, 'relationship_app/list_books.html', {'books': books})
+role = models.CharField(max_length=50,  choices='Role_Choices')
+userprofile = models.TextField()
 
-class LibraryDetailView(DetailView):
-    model = Library
-    template_name = 'relationship_app/library_detail.html'
-    context_object_name = 'library'
+def __str__(self):
+    return f'{self.user.username} - {self.role}'
 
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        return context
-
-@permission_required('relationship_app.can_add_book', raise_exception=True)
-def add_book(request):
-    if request.method == 'POST':
-        form = BookForm(request.POST)
-        if form.is_valid():
-            form.save()
-            return redirect('book_list')  # Redirect to the list of books after saving
-    else:
-        form = BookForm()
-    return render(request, 'relationship_app/add_book.html', {'form': form})
-
-# View to edit a book
-@permission_required('relationship_app.can_change_book', raise_exception=True)
-def edit_book(request, book_id):
-    book = get_object_or_404(Book, id=book_id)
-    if request.method == 'POST':
-        form = BookForm(request.POST, instance=book)
-        if form.is_valid():
-            form.save()
-            return redirect('book_list')  # Redirect after editing
-    else:
-        form = BookForm(instance=book)
-    return render(request, 'relationship_app/edit_book.html', {'form': form})
-
-# View to delete a book
-@permission_required('relationship_app.can_delete_book', raise_exception=True)
-def delete_book(request, book_id):
-    book = get_object_or_404(Book, id=book_id)
-    if request.method == 'POST':
-        book.delete()
-        return redirect('book_list')  # Redirect after deletion
-    return render(request, 'relationship_app/delete_book.html', {'book': book})
+#Signal to automatically create a UserProfile when a new User is created
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 
 
+@receiver(post_save, sender=User)
+def create_user_profile(sender, instance, created, **kwargs):
+    if created:
+        UserProfile.objects.create(user=instance)
 
-# Create your views here.
+@receiver(post_save, sender=User)
+def save_user_profile(sender, instance, **kwargs):
+    instance.userprofile.save()
